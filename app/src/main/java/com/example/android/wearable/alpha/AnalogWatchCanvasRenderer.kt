@@ -50,6 +50,7 @@ import org.jsoup.nodes.Document
 private const val FRAME_PERIOD_MS_DEFAULT: Long = 16L
 private const val TAG = "AnalogWatchCanvasRenderer"
 
+
 /**
  * Renders watch face via data in Room database. Also, updates watch face state based on setting
  * changes by user via [userStyleRepository.addUserStyleListener()].
@@ -277,7 +278,8 @@ class AnalogWatchCanvasRenderer(
             )
         }
 
-        canvas.drawText("목포대학교 컴퓨터학부", bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4, textUniversity)
+       // canvas.drawText("국립목포대학교 컴퓨터학부", bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4, textUniversity)
+        drawMultilineText(canvas, "국립목포대학교 컴퓨터학부", textUniversity, bounds.width() * 0.4f, bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4+20)
        // canvas.drawText("$todayMenu", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4, textLunchMenu)
 
         val currentDate = ZonedDateTime.now()
@@ -288,8 +290,10 @@ class AnalogWatchCanvasRenderer(
             drawMultilineText(canvas, todayMenu.first, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
         } else if (currentHour in 10..13 && dayOfWeek.value in 1..5) {
             drawMultilineText(canvas, todayMenu.second, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+        } else if(dayOfWeek.value in 6..7) {
+            canvas.drawText("2024", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
         } else {
-            canvas.drawText(todayMenu.first, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
+            canvas.drawText("오늘은 좋은 날.", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
         }
 
 
@@ -547,7 +551,7 @@ class AnalogWatchCanvasRenderer(
     //대학 학과 표기
     val textUniversity = Paint().apply {
         isAntiAlias = true
-        textSize = 20f
+        textSize = 25f
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
     }
