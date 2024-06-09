@@ -246,6 +246,7 @@ class AnalogWatchCanvasRenderer(
         sharedAssets: AnalogSharedAssets
     ) {
 
+
         val backgroundColor = if (renderParameters.drawMode == DrawMode.AMBIENT) {
             watchFaceColors.ambientBackgroundColor
         } else {
@@ -279,8 +280,15 @@ class AnalogWatchCanvasRenderer(
         canvas.drawText("목포대학교 컴퓨터학부", bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4, textUniversity)
        // canvas.drawText("$todayMenu", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4, textLunchMenu)
 
+        val currentHour = ZonedDateTime.now().hour
         val maxWidth = bounds.width() * 0.8f  // Adjust as necessary
-        drawMultilineText(canvas, todayMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+        if(currentHour in 10..13) {
+            drawMultilineText(canvas, todayMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+        } else {
+            canvas.drawText("좋은 하루!", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
+        }
+
+
     }
 
     // ----- All drawing functions -----
