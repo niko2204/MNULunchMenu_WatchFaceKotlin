@@ -1,5 +1,6 @@
 # MNU Lunch Menu watch face
 ## 안드로이드 watchface 샘플을 이용하여 목포대학교 홈페이지에서 점심 메뉴를 가져오는 코드입니다. 
+### 오전 10시부터 13시 사이에만 메뉴를 보여줍니다. 
 ### 예시
 ![example] <img src="https://github.com/niko2204/MNULunchMenu_WatchFaceKotlin/assets/5626825/a3c76983-07b0-4b89-a4ea-2fc37c3001b9">
 
