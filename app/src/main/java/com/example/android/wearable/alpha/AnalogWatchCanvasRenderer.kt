@@ -280,12 +280,16 @@ class AnalogWatchCanvasRenderer(
         canvas.drawText("목포대학교 컴퓨터학부", bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4, textUniversity)
        // canvas.drawText("$todayMenu", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4, textLunchMenu)
 
-        val currentHour = ZonedDateTime.now().hour
+        val currentDate = ZonedDateTime.now()
+        val currentHour = currentDate.hour
+        val dayOfWeek = currentDate.dayOfWeek
         val maxWidth = bounds.width() * 0.8f  // Adjust as necessary
-        if(currentHour in 10..13) {
-            drawMultilineText(canvas, todayMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+        if (currentHour in 6..9 && dayOfWeek.value in 1..5) {
+            drawMultilineText(canvas, todayMenu.first, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+        } else if (currentHour in 10..13 && dayOfWeek.value in 1..5) {
+            drawMultilineText(canvas, todayMenu.second, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
         } else {
-            canvas.drawText("좋은 하루!", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
+            canvas.drawText(todayMenu.first, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
         }
 
 
@@ -537,7 +541,7 @@ class AnalogWatchCanvasRenderer(
         // Used to canvas.scale() to scale watch hands in proper bounds. This will always be 1.0.
         private const val WATCH_HAND_SCALE = 1.0f
 
-        var todayMenu: String = "메뉴를 불러오는 중..."
+        var todayMenu: Pair<String, String> = Pair("메뉴를 불러오는 중...", "메뉴를 불러오는 중...")
     }
 
     //대학 학과 표기
@@ -583,7 +587,7 @@ class AnalogWatchCanvasRenderer(
         )
     }
 
-    private suspend fun fetchLunchMenu(): String {
+    private suspend fun fetchLunchMenu(): Pair<String, String> {
         return withContext(Dispatchers.IO) {
             try {
                 Log.d(TAG, "Fetching lunch menu")
@@ -594,7 +598,7 @@ class AnalogWatchCanvasRenderer(
                 var todayStr = today.format(formatter)
 
                 // 디버깅을 위해 날짜를 하드코딩
-                //todayStr = "06.13"
+                //todayStr = "06.14"
 
                 Log.d(TAG, "Today's date: $todayStr")
 
@@ -609,22 +613,30 @@ class AnalogWatchCanvasRenderer(
                 Log.d(TAG, "Found ${dateElements.size} date elements")
                 Log.d(TAG, "Found ${dlElements.size} dl elements")
 
+                var breakfastMenu = "휴일"
+                var lunchMenu = "휴일"
+
                 for (dlElement in dlElements) {
                     val contWrapElements = dlElement.select("dd .contWrap")
                     Log.d(TAG, "Found ${contWrapElements.size} contWrap elements in a dl element")
+                    if (contWrapElements.size > 0) {
+                        val mainDish = contWrapElements[0].select("div.main").text()
+                        val menu = contWrapElements[0].select("div.menu").text()
+                        Log.d(TAG, "Found first menu for $todayStr: $mainDish, $menu")
+                        breakfastMenu = "$todayStr:아침 $mainDish, $menu"
+                    }
                     if (contWrapElements.size > 1) {
                         val mainDish = contWrapElements[1].select("div.main").text()
                         val menu = contWrapElements[1].select("div.menu").text()
                         Log.d(TAG, "Found second menu for $todayStr: $mainDish, $menu")
-                        return@withContext "$todayStr: $mainDish, $menu"
+                        lunchMenu = "$todayStr:점심 $mainDish, $menu"
                     }
                 }
 
-                Log.d(TAG, "No second menu found for $todayStr")
-                return@withContext "휴일"
+                return@withContext Pair(breakfastMenu, lunchMenu)
             } catch (e: Exception) {
                 Log.e(TAG, "메뉴를 가져올 수 없습니다.", e)
-                return@withContext "메뉴를 가져올 수 없습니다."
+                return@withContext Pair("메뉴를 가져올 수 없습니다.", "메뉴를 가져올 수 없습니다.")
             }
         }
     }
