@@ -1,3 +1,10 @@
+# MNU Lunch Menu watch face
+## 안드로이드 watchface 샘플을 이용하여 목포대학교 홈페이지에서 점심 메뉴를 가져오는 코드입니다. 
+
+
+
+
+
 WatchFace Sample (Kotlin)
 ===============================
 Demonstrates watch faces using the androidX libraries (Kotlin). **The newer [Watch Face Format][1]
