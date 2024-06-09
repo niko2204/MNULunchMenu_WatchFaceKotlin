@@ -3,7 +3,7 @@
 ### 예시
 ![example] <img src="https://github.com/niko2204/MNULunchMenu_WatchFaceKotlin/assets/5626825/a3c76983-07b0-4b89-a4ea-2fc37c3001b9">
 
-
+<img src="https://github.com/niko2204/MNULunchMenu_WatchFaceKotlin/assets/5626825/fee52453-afb7-4ba2-a9ab-4d117ce3910b">
 
 WatchFace Sample (Kotlin)
 ===============================
