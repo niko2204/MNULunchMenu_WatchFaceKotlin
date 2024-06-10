@@ -283,6 +283,7 @@ class AnalogWatchCanvasRenderer(
        // canvas.drawText("$todayMenu", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4, textLunchMenu)
 
         val currentDate = ZonedDateTime.now()
+       // Log.d(TAG, "Current date: $currentDate")
         val currentHour = currentDate.hour
         val dayOfWeek = currentDate.dayOfWeek
         val maxWidth = bounds.width() * 0.8f  // Adjust as necessary
@@ -565,31 +566,41 @@ class AnalogWatchCanvasRenderer(
     }
 
     private fun scheduleMenuFetch() {
+        scheduleDailyTaskAt(4)
+        scheduleDailyTaskAt(6)
+        scheduleDailyTaskAt(10)
+    }
+
+    private fun scheduleDailyTaskAt(hour: Int) {
         val calendar = Calendar.getInstance()
-        calendar.set(Calendar.HOUR_OF_DAY, 6)
+        // 설정된 시간으로 설정
+        calendar.set(Calendar.HOUR_OF_DAY, hour)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
 
-        val initialDelay = calendar.timeInMillis - System.currentTimeMillis()
+        // 초기 지연 시간 계산
+        var initialDelay = calendar.timeInMillis - System.currentTimeMillis()
         if (initialDelay < 0) {
             // 시간이 이미 지났다면 다음 날로 예약합니다.
             calendar.add(Calendar.DAY_OF_YEAR, 1)
+            initialDelay = calendar.timeInMillis - System.currentTimeMillis()
         }
 
         Executors.newSingleThreadScheduledExecutor().scheduleWithFixedDelay(
             {
                 scope.launch {
-                    Log.d(TAG, "Fetching daily menu")
+                    Log.d(TAG, "Fetching daily menu at $hour:00")
                     todayMenu = fetchLunchMenu()
                     Log.d(TAG, "Fetched menu: $todayMenu")
                     invalidate()
                 }
             },
             initialDelay,
-            TimeUnit.DAYS.toMillis(1),
+            TimeUnit.DAYS.toMillis(1),  // 24시간(1일) 간격으로 반복
             TimeUnit.MILLISECONDS
         )
     }
+
 
     private suspend fun fetchLunchMenu(): Pair<String, String> {
         return withContext(Dispatchers.IO) {
