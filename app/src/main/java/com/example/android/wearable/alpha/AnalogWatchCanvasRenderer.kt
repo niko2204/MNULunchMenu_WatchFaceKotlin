@@ -41,10 +41,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+
 
 // Default for how long each frame is displayed at expected frame rate.
 private const val FRAME_PERIOD_MS_DEFAULT: Long = 16L
@@ -131,13 +133,14 @@ class AnalogWatchCanvasRenderer(
 
         // Fetch the menu once initially
         scope.launch {
-            todayMenu = fetchLunchMenu()
+            weeklyMenu = fetchWeeklyLunchMenu()
             invalidate()
         }
 
         // Schedule daily menu fetch
         scheduleMenuFetch()
     }
+
 
     override suspend fun createSharedAssets(): AnalogSharedAssets {
         return AnalogSharedAssets()
@@ -246,8 +249,6 @@ class AnalogWatchCanvasRenderer(
         zonedDateTime: ZonedDateTime,
         sharedAssets: AnalogSharedAssets
     ) {
-
-
         val backgroundColor = if (renderParameters.drawMode == DrawMode.AMBIENT) {
             watchFaceColors.ambientBackgroundColor
         } else {
@@ -278,27 +279,26 @@ class AnalogWatchCanvasRenderer(
             )
         }
 
-       // canvas.drawText("국립목포대학교 컴퓨터학부", bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4, textUniversity)
-        drawMultilineText(canvas, "국립목포대학교 컴퓨터학부", textUniversity, bounds.width() * 0.4f, bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4+20)
-       // canvas.drawText("$todayMenu", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4, textLunchMenu)
+        drawMultilineText(canvas, "국립목포대학교 컴퓨터학부", textUniversity, bounds.width() * 0.4f, bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4 + 20)
 
         val currentDate = ZonedDateTime.now()
-       // Log.d(TAG, "Current date: $currentDate")
         val currentHour = currentDate.hour
-        val dayOfWeek = currentDate.dayOfWeek
+        val dayOfWeek = currentDate.dayOfWeek.value - 1 // Convert to 0-based index
         val maxWidth = bounds.width() * 0.8f  // Adjust as necessary
-        if (currentHour in 6..9 && dayOfWeek.value in 1..5) {
-            drawMultilineText(canvas, todayMenu.first, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
-        } else if (currentHour in 10..13 && dayOfWeek.value in 1..5) {
-            drawMultilineText(canvas, todayMenu.second, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
-        } else if(dayOfWeek.value in 6..7) {
-            canvas.drawText("2024", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
+
+        if (dayOfWeek in weeklyMenu.indices) {
+            val (breakfastMenu, lunchMenu) = weeklyMenu[dayOfWeek]
+
+            when (currentHour) {
+                in 6..9 -> drawMultilineText(canvas, breakfastMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                in 10..12 -> drawMultilineText(canvas, lunchMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                else -> drawMultilineText(canvas, "오늘은 좋은 날.", textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+            }
         } else {
-            canvas.drawText("오늘은 좋은 날.", bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6, textLunchMenu)
+            drawMultilineText(canvas, "메뉴를 불러오는 중...", textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
         }
-
-
     }
+
 
     // ----- All drawing functions -----
     private fun drawComplications(canvas: Canvas, zonedDateTime: ZonedDateTime) {
@@ -546,7 +546,7 @@ class AnalogWatchCanvasRenderer(
         // Used to canvas.scale() to scale watch hands in proper bounds. This will always be 1.0.
         private const val WATCH_HAND_SCALE = 1.0f
 
-        var todayMenu: Pair<String, String> = Pair("메뉴를 불러오는 중...", "메뉴를 불러오는 중...")
+        var weeklyMenu: List<Pair<String, String>> = listOf(Pair("메뉴를 불러오는 중...", "메뉴를 불러오는 중..."))
     }
 
     //대학 학과 표기
@@ -566,22 +566,17 @@ class AnalogWatchCanvasRenderer(
     }
 
     private fun scheduleMenuFetch() {
-        scheduleDailyTaskAt(4)
-        scheduleDailyTaskAt(6)
-        scheduleDailyTaskAt(10)
+        scheduleDailyTaskAt(8)
     }
 
     private fun scheduleDailyTaskAt(hour: Int) {
         val calendar = Calendar.getInstance()
-        // 설정된 시간으로 설정
         calendar.set(Calendar.HOUR_OF_DAY, hour)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
 
-        // 초기 지연 시간 계산
         var initialDelay = calendar.timeInMillis - System.currentTimeMillis()
         if (initialDelay < 0) {
-            // 시간이 이미 지났다면 다음 날로 예약합니다.
             calendar.add(Calendar.DAY_OF_YEAR, 1)
             initialDelay = calendar.timeInMillis - System.currentTimeMillis()
         }
@@ -589,72 +584,72 @@ class AnalogWatchCanvasRenderer(
         Executors.newSingleThreadScheduledExecutor().scheduleWithFixedDelay(
             {
                 scope.launch {
-                    Log.d(TAG, "Fetching daily menu at $hour:00")
-                    todayMenu = fetchLunchMenu()
-                    Log.d(TAG, "Fetched menu: $todayMenu")
+                    Log.d(TAG, "Fetching weekly menu at $hour:00")
+                    weeklyMenu = fetchWeeklyLunchMenu()
+                    Log.d(TAG, "Fetched weekly menu: $weeklyMenu")
                     invalidate()
                 }
             },
             initialDelay,
-            TimeUnit.DAYS.toMillis(1),  // 24시간(1일) 간격으로 반복
+            TimeUnit.DAYS.toMillis(1),
             TimeUnit.MILLISECONDS
         )
     }
 
 
-    private suspend fun fetchLunchMenu(): Pair<String, String> {
+
+    private suspend fun fetchWeeklyLunchMenu(): List<Pair<String, String>> {
         return withContext(Dispatchers.IO) {
-            try {
-                Log.d(TAG, "Fetching lunch menu")
-                // 오늘 날짜를 가져옵니다.
-                val today = LocalDate.now()
-                // 날짜를 원하는 형식으로 포맷합니다.
-                val formatter = DateTimeFormatter.ofPattern("MM.dd")
-                var todayStr = today.format(formatter)
+            val formatter = DateTimeFormatter.ofPattern("MM.dd")
+            val weeklyMenu = mutableListOf<Pair<String, String>>()
 
-                // 디버깅을 위해 날짜를 하드코딩
-                //todayStr = "06.14"
+            for (i in 0 until 7) {
+                val date = LocalDate.now().plusDays(i.toLong())
+                val dateStr = date.format(formatter)
 
-                Log.d(TAG, "Today's date: $todayStr")
+                try {
+                    Log.d(TAG, "Fetching lunch menu for date: $dateStr")
 
-                val url = "https://www.mokpo.ac.kr/www/275/subview.do"
-                val document: Document = Jsoup.connect(url).get()
+                    val url = "https://www.mokpo.ac.kr/www/275/subview.do"
+                    val document: Document = Jsoup.connect(url).get()
 
-                Log.d(TAG, "Fetched document")
+                    Log.d(TAG, "Fetched document")
 
-                val dateElements = document.select("span.date")
-                val dlElements = document.select("dl:has(span.date:contains($todayStr))")
+                    val dlElements = document.select("dl:has(span.date:contains($dateStr))")
 
-                Log.d(TAG, "Found ${dateElements.size} date elements")
-                Log.d(TAG, "Found ${dlElements.size} dl elements")
+                    Log.d(TAG, "Found ${dlElements.size} dl elements for date: $dateStr")
 
-                var breakfastMenu = "휴일"
-                var lunchMenu = "휴일"
+                    var breakfastMenu = "휴일"
+                    var lunchMenu = "휴일"
 
-                for (dlElement in dlElements) {
-                    val contWrapElements = dlElement.select("dd .contWrap")
-                    Log.d(TAG, "Found ${contWrapElements.size} contWrap elements in a dl element")
-                    if (contWrapElements.size > 0) {
-                        val mainDish = contWrapElements[0].select("div.main").text()
-                        val menu = contWrapElements[0].select("div.menu").text()
-                        Log.d(TAG, "Found first menu for $todayStr: $mainDish, $menu")
-                        breakfastMenu = "$todayStr:아침 $mainDish, $menu"
+                    for (dlElement in dlElements) {
+                        val contWrapElements = dlElement.select("dd .contWrap")
+                        Log.d(TAG, "Found ${contWrapElements.size} contWrap elements in a dl element")
+                        if (contWrapElements.size > 0) {
+                            val mainDish = contWrapElements[0].select("div.main").text()
+                            val menu = contWrapElements[0].select("div.menu").text()
+                            Log.d(TAG, "Found first menu for $dateStr: $mainDish, $menu")
+                            breakfastMenu = "$dateStr:아침 $mainDish, $menu"
+                        }
+                        if (contWrapElements.size > 1) {
+                            val mainDish = contWrapElements[1].select("div.main").text()
+                            val menu = contWrapElements[1].select("div.menu").text()
+                            Log.d(TAG, "Found second menu for $dateStr: $mainDish, $menu")
+                            lunchMenu = "$dateStr:점심 $mainDish, $menu"
+                        }
                     }
-                    if (contWrapElements.size > 1) {
-                        val mainDish = contWrapElements[1].select("div.main").text()
-                        val menu = contWrapElements[1].select("div.menu").text()
-                        Log.d(TAG, "Found second menu for $todayStr: $mainDish, $menu")
-                        lunchMenu = "$todayStr:점심 $mainDish, $menu"
-                    }
+
+                    weeklyMenu.add(Pair(breakfastMenu, lunchMenu))
+                } catch (e: Exception) {
+                    Log.e(TAG, "메뉴를 가져올 수 없습니다 for date: $dateStr. 1시간 후에 다시 시도합니다.", e)
+                    delay(3600000) // Delay for 1 hour
+                    return@withContext fetchWeeklyLunchMenu() // Retry fetching the weekly menu
                 }
-
-                return@withContext Pair(breakfastMenu, lunchMenu)
-            } catch (e: Exception) {
-                Log.e(TAG, "메뉴를 가져올 수 없습니다.", e)
-                return@withContext Pair("메뉴를 가져올 수 없습니다.", "메뉴를 가져올 수 없습니다.")
             }
+            return@withContext weeklyMenu
         }
     }
+
 
 
     private fun drawMultilineText(
