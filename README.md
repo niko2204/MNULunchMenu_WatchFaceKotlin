@@ -182,6 +182,11 @@ override fun render(
 }
 
 ```
+
+## 향후 계획
+#### 컴플리케이션으로 작성하여야 함
+#### 학과특성에 맞는 워치페이스 제작이 필요함
+
 ## 예시
 <img src="https://github.com/niko2204/MNULunchMenu_WatchFaceKotlin/assets/5626825/a3c76983-07b0-4b89-a4ea-2fc37c3001b9" width="400">
 
