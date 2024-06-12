@@ -16,7 +16,7 @@
   -->
 <resources>
     <!-- constants for watch face element renderer. -->
-    <dimen name="hour_mark_size">10sp</dimen>
+    <dimen name="hour_mark_size">25sp</dimen>
     <dimen name="clock_hand_stroke_width">2dp</dimen>
 
     <!-- Values for WatchFaceConfigActivity -->
@@ -33,4 +33,7 @@
     <dimen name="analog_complication_color_picker_size">70dp</dimen>
     <dimen name="watch_face_preview_background_padding">16dp</dimen>
     <dimen name="no_padding">0dp</dimen>
+
+    <dimen name="mylunch_message_size">12dp</dimen>
+    <dimen name="mylunch_univeristy_size">12dp</dimen>
 </resources>

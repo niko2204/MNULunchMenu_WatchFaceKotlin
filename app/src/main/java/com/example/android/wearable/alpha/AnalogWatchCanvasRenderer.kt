@@ -6,6 +6,10 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.text.TextPaint
 import android.util.Log
 import android.view.SurfaceHolder
@@ -34,9 +38,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,16 +52,12 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
-
-// Default for how long each frame is displayed at expected frame rate.
 private const val FRAME_PERIOD_MS_DEFAULT: Long = 16L
 private const val TAG = "AnalogWatchCanvasRenderer"
+private const val GESTURE_THRESHOLD_GRAVITY = 1.2f
+private const val GESTURE_SLOP_TIME_MS = 500
+private const val GESTURE_COUNT_RESET_TIME_MS = 3000
 
-
-/**
- * Renders watch face via data in Room database. Also, updates watch face state based on setting
- * changes by user via [userStyleRepository.addUserStyleListener()].
- */
 class AnalogWatchCanvasRenderer(
     private val context: Context,
     surfaceHolder: SurfaceHolder,
@@ -73,27 +74,20 @@ class AnalogWatchCanvasRenderer(
     clearWithBackgroundTintBeforeRenderingHighlightLayer = false
 ) {
     class AnalogSharedAssets : SharedAssets {
-        override fun onDestroy() {
-        }
+        override fun onDestroy() {}
     }
 
     private val scope: CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    // Represents all data needed to render the watch face. All value defaults are constants. Only
-    // three values are changeable by the user (color scheme, ticks being rendered, and length of
-    // the minute arm). Those dynamic values are saved in the watch face APIs and we update those
-    // here (in the renderer) through a Kotlin Flow.
     private var watchFaceData: WatchFaceData = WatchFaceData()
 
-    // Converts resource ids into Colors and ComplicationDrawable.
     private var watchFaceColors = convertToWatchFaceColorPalette(
         context,
         watchFaceData.activeColorStyle,
         watchFaceData.ambientColorStyle
     )
 
-    // Initializes paint object for painting the clock hands with default values.
     private val clockHandPaint = Paint().apply {
         isAntiAlias = true
         strokeWidth =
@@ -104,7 +98,6 @@ class AnalogWatchCanvasRenderer(
         isAntiAlias = true
     }
 
-    // Used to paint the main hour hand text with the hour pips, i.e., 3, 6, 9, and 12 o'clock.
     private val textPaint = Paint().apply {
         isAntiAlias = true
         textSize = context.resources.getDimensionPixelSize(R.dimen.hour_mark_size).toFloat()
@@ -116,46 +109,109 @@ class AnalogWatchCanvasRenderer(
     private lateinit var minuteHandBorder: Path
     private lateinit var secondHand: Path
 
-    // Changed when setting changes cause a change in the minute hand arm (triggered by user in
-    // updateUserStyle() via userStyleRepository.addUserStyleListener()).
     private var armLengthChangedRecalculateClockHands: Boolean = false
 
-    // Default size of watch face drawing area, that is, a no size rectangle. Will be replaced with
-    // valid dimensions from the system.
     private var currentWatchFaceSize = Rect(0, 0, 0, 0)
 
+    private var showMenu = false
+    private var gestureTime: Long = 0
+    private var lastGestureTimestamp: Long = 0
+    private var gestureCount: Int = 0
+
+    private val sensorManager: SensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val accelerometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val gyroscope: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+    private val sensorListener = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                val x = event.values[0]
+                val y = event.values[1]
+                val z = event.values[2]
+
+                val gForce = sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
+
+                if (gForce > GESTURE_THRESHOLD_GRAVITY) {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastGestureTimestamp > GESTURE_SLOP_TIME_MS) {
+                        if (currentTime - lastGestureTimestamp > GESTURE_COUNT_RESET_TIME_MS) {
+                            gestureCount = 0
+                        }
+                        lastGestureTimestamp = currentTime
+                        gestureCount++
+
+                        if (gestureCount >= 2) {
+                            gestureTime = currentTime
+                            showMenu = true
+                            scope.launch {
+                                delay(10000)
+                                showMenu = false
+                                invalidate()
+                            }
+                            gestureCount = 0
+                        }
+                    }
+                }
+            } else if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+                val rotationRateX = event.values[0]
+                val rotationRateY = event.values[1]
+                val rotationRateZ = event.values[2]
+
+                val rotationRate = sqrt(rotationRateX * rotationRateX + rotationRateY * rotationRateY + rotationRateZ * rotationRateZ)
+
+                if (rotationRate > GESTURE_THRESHOLD_GRAVITY) {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastGestureTimestamp > GESTURE_SLOP_TIME_MS) {
+                        if (currentTime - lastGestureTimestamp > GESTURE_COUNT_RESET_TIME_MS) {
+                            gestureCount = 0
+                        }
+                        lastGestureTimestamp = currentTime
+                        gestureCount++
+
+                        if (gestureCount >= 2) {
+                            gestureTime = currentTime
+                            showMenu = true
+                            scope.launch {
+                                delay(10000)
+                                showMenu = false
+                                invalidate()
+                            }
+                            gestureCount = 0
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     init {
+        sensorManager.registerListener(sensorListener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        sensorManager.registerListener(sensorListener, gyroscope, SensorManager.SENSOR_DELAY_UI)
+
         scope.launch {
             currentUserStyleRepository.userStyle.collect { userStyle ->
                 updateWatchFaceData(userStyle)
             }
         }
 
-        // Fetch the menu once initially
         scope.launch {
             weeklyMenu = fetchWeeklyLunchMenu()
             invalidate()
         }
 
-        // Schedule daily menu fetch
         scheduleMenuFetch()
     }
-
 
     override suspend fun createSharedAssets(): AnalogSharedAssets {
         return AnalogSharedAssets()
     }
 
-    /*
-     * Triggered when the user makes changes to the watch face through the settings activity. The
-     * function is called by a flow.
-     */
     private fun updateWatchFaceData(userStyle: UserStyle) {
         Log.d(TAG, "updateWatchFace(): $userStyle")
 
         var newWatchFaceData: WatchFaceData = watchFaceData
 
-        // Loops through user style and applies new values to watchFaceData.
         for (options in userStyle) {
             when (options.key.id.toString()) {
                 COLOR_STYLE_SETTING -> {
@@ -180,12 +236,8 @@ class AnalogWatchCanvasRenderer(
                     val doubleValue = options.value as
                         UserStyleSetting.DoubleRangeUserStyleSetting.DoubleRangeOption
 
-                    // The arm lengths are usually only calculated the first time the watch face is
-                    // loaded to reduce the ops in the onDraw(). Because we updated the minute hand
-                    // watch length, we need to trigger a recalculation.
                     armLengthChangedRecalculateClockHands = true
 
-                    // Updates length of minute hand based on edits from user.
                     val newMinuteHandDimensions = newWatchFaceData.minuteHandDimensions.copy(
                         lengthFraction = doubleValue.value.toFloat()
                     )
@@ -197,20 +249,15 @@ class AnalogWatchCanvasRenderer(
             }
         }
 
-        // Only updates if something changed.
         if (watchFaceData != newWatchFaceData) {
             watchFaceData = newWatchFaceData
 
-            // Recreates Color and ComplicationDrawable from resource ids.
             watchFaceColors = convertToWatchFaceColorPalette(
                 context,
                 watchFaceData.activeColorStyle,
                 watchFaceData.ambientColorStyle
             )
 
-            // Applies the user chosen complication color scheme changes. ComplicationDrawables for
-            // each of the styles are defined in XML so we need to replace the complication's
-            // drawables.
             for ((_, complication) in complicationSlotsManager.complicationSlots) {
                 ComplicationDrawable.getDrawable(
                     context,
@@ -225,6 +272,7 @@ class AnalogWatchCanvasRenderer(
     override fun onDestroy() {
         Log.d(TAG, "onDestroy()")
         scope.cancel("AnalogWatchCanvasRenderer scope clear() request")
+        sensorManager.unregisterListener(sensorListener)
         super.onDestroy()
     }
 
@@ -257,7 +305,6 @@ class AnalogWatchCanvasRenderer(
 
         canvas.drawColor(backgroundColor)
 
-        // CanvasComplicationDrawable already obeys rendererParameters.
         drawComplications(canvas, zonedDateTime)
 
         if (renderParameters.watchFaceLayers.contains(WatchFaceLayer.COMPLICATIONS_OVERLAY)) {
@@ -279,19 +326,42 @@ class AnalogWatchCanvasRenderer(
             )
         }
 
-        drawMultilineText(canvas, "국립목포대학교 컴퓨터학부", textUniversity, bounds.width() * 0.4f, bounds.exactCenterX(), bounds.exactCenterY() - bounds.width() / 4 + 20)
+        canvas.drawText(
+            context.getString(R.string.university_name),
+            bounds.exactCenterX(),
+            bounds.exactCenterY() - bounds.width() / 4 - 10,
+            textUniversity
+        )
+        canvas.drawText(
+            context.getString(R.string.department_name),
+            bounds.exactCenterX(),
+            bounds.exactCenterY() - bounds.width() / 4 + 20,
+            textUniversity
+        )
 
         val currentDate = ZonedDateTime.now()
         val currentHour = currentDate.hour
-        val dayOfWeek = currentDate.dayOfWeek.value - 1 // Convert to 0-based index
-        val maxWidth = bounds.width() * 0.8f  // Adjust as necessary
+        val dayOfWeek = currentDate.dayOfWeek.value - 1
+        val maxWidth = bounds.width() * 0.8f
 
         if (dayOfWeek in weeklyMenu.indices) {
             val (breakfastMenu, lunchMenu) = weeklyMenu[dayOfWeek]
+            val (breakfastMain, breakfastDetail) = splitMenu(breakfastMenu)
+            val (lunchMain, lunchDetail) = splitMenu(lunchMenu)
 
             when (currentHour) {
-                in 6..9 -> drawMultilineText(canvas, breakfastMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
-                in 10..12 -> drawMultilineText(canvas, lunchMenu, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                in 6..9 -> {
+                    drawMultilineText(canvas, breakfastMain, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                    if (showMenu) {
+                        drawMultilineText(canvas, breakfastDetail, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4)
+                    }
+                }
+                in 10..12 -> {
+                    drawMultilineText(canvas, lunchMain, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                    if (showMenu) {
+                        drawMultilineText(canvas, lunchDetail, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4)
+                    }
+                }
                 else -> drawMultilineText(canvas, "오늘은 좋은 날.", textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
             }
         } else {
@@ -299,8 +369,6 @@ class AnalogWatchCanvasRenderer(
         }
     }
 
-
-    // ----- All drawing functions -----
     private fun drawComplications(canvas: Canvas, zonedDateTime: ZonedDateTime) {
         for ((_, complication) in complicationSlotsManager.complicationSlots) {
             if (complication.enabled) {
@@ -314,30 +382,17 @@ class AnalogWatchCanvasRenderer(
         bounds: Rect,
         zonedDateTime: ZonedDateTime
     ) {
-        // Only recalculate bounds (watch face size/surface) has changed or the arm of one of the
-        // clock hands has changed (via user input in the settings).
-        // NOTE: Watch face surface usually only updates one time (when the size of the device is
-        // initially broadcasted).
         if (currentWatchFaceSize != bounds || armLengthChangedRecalculateClockHands) {
             armLengthChangedRecalculateClockHands = false
             currentWatchFaceSize = bounds
             recalculateClockHands(bounds)
         }
 
-        // Retrieve current time to calculate location/rotation of watch arms.
         val secondOfDay = zonedDateTime.toLocalTime().toSecondOfDay()
 
-        // Determine the rotation of the hour and minute hand.
-
-        // Determine how many seconds it takes to make a complete rotation for each hand
-        // It takes the hour hand 12 hours to make a complete rotation
         val secondsPerHourHandRotation = Duration.ofHours(12).seconds
-        // It takes the minute hand 1 hour to make a complete rotation
         val secondsPerMinuteHandRotation = Duration.ofHours(1).seconds
 
-        // Determine the angle to draw each hand expressed as an angle in degrees from 0 to 360
-        // Since each hand does more than one cycle a day, we are only interested in the remainder
-        // of the secondOfDay modulo the hand interval
         val hourRotation = secondOfDay.rem(secondsPerHourHandRotation) * 360.0f /
             secondsPerHourHandRotation
         val minuteRotation = secondOfDay.rem(secondsPerMinuteHandRotation) * 360.0f /
@@ -358,22 +413,17 @@ class AnalogWatchCanvasRenderer(
                 watchFaceColors.activePrimaryColor
             }
 
-            // Draw hour hand.
             withRotation(hourRotation, bounds.exactCenterX(), bounds.exactCenterY()) {
                 drawPath(hourHandBorder, clockHandPaint)
             }
 
-            // Draw minute hand.
             withRotation(minuteRotation, bounds.exactCenterX(), bounds.exactCenterY()) {
                 drawPath(minuteHandBorder, clockHandPaint)
             }
 
-            // Draw second hand if not in ambient mode
             if (!drawAmbient) {
                 clockHandPaint.color = watchFaceColors.activeSecondaryColor
 
-                // Second hand has a different color style (secondary color) and is only drawn in
-                // active mode, so we calculate it here (not above with others).
                 val secondsPerSecondHandRotation = Duration.ofMinutes(1).seconds
                 val secondsRotation = secondOfDay.rem(secondsPerSecondHandRotation) * 360.0f /
                     secondsPerSecondHandRotation
@@ -386,10 +436,6 @@ class AnalogWatchCanvasRenderer(
         }
     }
 
-    /*
-     * Rarely called (only when watch face surface changes; usually only once) from the
-     * drawClockHands() method.
-     */
     private fun recalculateClockHands(bounds: Rect) {
         Log.d(TAG, "recalculateClockHands()")
         hourHandBorder =
@@ -425,17 +471,6 @@ class AnalogWatchCanvasRenderer(
             )
     }
 
-    /**
-     * Returns a round rect clock hand if {@code rx} and {@code ry} equals to 0, otherwise return a
-     * rect clock hand.
-     *
-     * @param bounds The bounds use to determine the coordinate of the clock hand.
-     * @param length Clock hand's length, in fraction of {@code bounds.width()}.
-     * @param thickness Clock hand's thickness, in fraction of {@code bounds.width()}.
-     * @param gapBetweenHandAndCenter Gap between inner side of arm and center.
-     * @param roundedCornerXRadius The x-radius of the rounded corners on the round-rectangle.
-     * @param roundedCornerYRadius The y-radius of the rounded corners on the round-rectangle.
-     */
     private fun createClockHand(
         bounds: Rect,
         length: Float,
@@ -484,7 +519,6 @@ class AnalogWatchCanvasRenderer(
         numberStyleOuterCircleRadiusFraction: Float,
         gapBetweenOuterCircleAndBorderFraction: Float
     ) {
-        // Draws text hour indicators (12, 3, 6, and 9).
         val textBounds = Rect()
         textPaint.color = outerElementColor
         for (i in 0 until 4) {
@@ -500,7 +534,6 @@ class AnalogWatchCanvasRenderer(
             )
         }
 
-        // Draws dots for the remain hour indicators between the numbers above.
         outerElementPaint.strokeWidth = outerCircleStokeWidthFraction * bounds.width()
         outerElementPaint.color = outerElementColor
         canvas.save()
@@ -518,7 +551,6 @@ class AnalogWatchCanvasRenderer(
         canvas.restore()
     }
 
-    /** Draws the outer circle on the top middle of the given bounds. */
     private fun drawTopMiddleCircle(
         canvas: Canvas,
         bounds: Rect,
@@ -527,7 +559,6 @@ class AnalogWatchCanvasRenderer(
     ) {
         outerElementPaint.style = Paint.Style.FILL_AND_STROKE
 
-        // X and Y coordinates of the center of the circle.
         val centerX = 0.5f * bounds.width().toFloat()
         val centerY = bounds.width() * (gapBetweenOuterCircleAndBorderFraction + radiusFraction)
 
@@ -540,27 +571,21 @@ class AnalogWatchCanvasRenderer(
     }
 
     companion object {
-        // Painted between pips on watch face for hour marks.
         private val HOUR_MARKS = arrayOf("3", "6", "9", "12")
-
-        // Used to canvas.scale() to scale watch hands in proper bounds. This will always be 1.0.
         private const val WATCH_HAND_SCALE = 1.0f
-
         var weeklyMenu: List<Pair<String, String>> = listOf(Pair("메뉴를 불러오는 중...", "메뉴를 불러오는 중..."))
     }
 
-    //대학 학과 표기
     val textUniversity = Paint().apply {
         isAntiAlias = true
-        textSize = 25f
+        textSize = context.resources.getDimension(R.dimen.mylunch_univeristy_size)
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
     }
 
-
     val textLunchMenu = Paint().apply {
         isAntiAlias = true
-        textSize = 20f
+        textSize = context.resources.getDimension(R.dimen.mylunch_message_size)
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
     }
@@ -596,8 +621,6 @@ class AnalogWatchCanvasRenderer(
         )
     }
 
-
-
     private suspend fun fetchWeeklyLunchMenu(): List<Pair<String, String>> {
         return withContext(Dispatchers.IO) {
             val formatter = DateTimeFormatter.ofPattern("MM.dd")
@@ -629,28 +652,35 @@ class AnalogWatchCanvasRenderer(
                             val mainDish = contWrapElements[0].select("div.main").text()
                             val menu = contWrapElements[0].select("div.menu").text()
                             Log.d(TAG, "Found first menu for $dateStr: $mainDish, $menu")
-                            breakfastMenu = "$dateStr:아침 $mainDish, $menu"
+                            breakfastMenu = "아침 $mainDish, $menu"
                         }
                         if (contWrapElements.size > 1) {
                             val mainDish = contWrapElements[1].select("div.main").text()
                             val menu = contWrapElements[1].select("div.menu").text()
                             Log.d(TAG, "Found second menu for $dateStr: $mainDish, $menu")
-                            lunchMenu = "$dateStr:점심 $mainDish, $menu"
+                            lunchMenu = "점심 $mainDish, $menu"
                         }
                     }
 
                     weeklyMenu.add(Pair(breakfastMenu, lunchMenu))
                 } catch (e: Exception) {
                     Log.e(TAG, "메뉴를 가져올 수 없습니다 for date: $dateStr. 1시간 후에 다시 시도합니다.", e)
-                    delay(3600000) // Delay for 1 hour
-                    return@withContext fetchWeeklyLunchMenu() // Retry fetching the weekly menu
+                    delay(3600000)
+                    return@withContext fetchWeeklyLunchMenu()
                 }
             }
             return@withContext weeklyMenu
         }
     }
 
-
+    private fun splitMenu(menu: String): Pair<String, String> {
+        val parts = menu.split(", ", limit = 2)
+        return if (parts.size == 2) {
+            parts[0] to parts[1]
+        } else {
+            menu to ""
+        }
+    }
 
     private fun drawMultilineText(
         canvas: Canvas,
@@ -660,7 +690,9 @@ class AnalogWatchCanvasRenderer(
         startX: Float,
         startY: Float
     ) {
-        val textPaint = TextPaint(textPaint)
+        val textPaint = TextPaint(textPaint).apply {
+            textSize = context.resources.getDimension(R.dimen.mylunch_message_size)
+        }
         val lines = ArrayList<String>()
 
         var start = 0
@@ -678,7 +710,4 @@ class AnalogWatchCanvasRenderer(
             y += textPaint.descent() - textPaint.ascent()
         }
     }
-
-
-
 }

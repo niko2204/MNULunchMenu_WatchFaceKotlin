@@ -99,4 +99,6 @@
 
     <string name="weekend_message">즐거운 주말</string>
     <string name="no_meal_message">활기찬 하루!</string>
+    <string name="university_name">국립목포대학교</string>
+    <string name="department_name">컴퓨터학부</string>
 </resources>
