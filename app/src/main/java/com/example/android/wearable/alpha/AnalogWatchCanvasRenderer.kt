@@ -341,13 +341,23 @@ class AnalogWatchCanvasRenderer(
 
         val currentDate = ZonedDateTime.now()
         val currentHour = currentDate.hour
-        val dayOfWeek = currentDate.dayOfWeek.value - 1
+        val formatter = DateTimeFormatter.ofPattern("MM.dd")
+        val todayDateStr = currentDate.format(formatter)
+
         val maxWidth = bounds.width() * 0.8f
 
-        if (dayOfWeek in weeklyMenu.indices) {
-            val (breakfastMenu, lunchMenu) = weeklyMenu[dayOfWeek]
+        // 오늘 날짜와 일치하는 메뉴 찾기
+        val todayMenu = weeklyMenu.find { menuPair ->
+            val (breakfastMenu, lunchMenu) = menuPair
+            breakfastMenu.contains(todayDateStr) || lunchMenu.contains(todayDateStr)
+        }
+
+        if (todayMenu != null) {
+            val (breakfastMenu, lunchMenu) = todayMenu
             val (breakfastMain, breakfastDetail) = splitMenu(breakfastMenu)
             val (lunchMain, lunchDetail) = splitMenu(lunchMenu)
+
+            Log.d(TAG, "breakfastMain: $breakfastMain")
 
             when (currentHour) {
                 in 6..9 -> {
@@ -368,6 +378,8 @@ class AnalogWatchCanvasRenderer(
             drawMultilineText(canvas, "메뉴를 불러오는 중...", textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
         }
     }
+
+
 
     private fun drawComplications(canvas: Canvas, zonedDateTime: ZonedDateTime) {
         for ((_, complication) in complicationSlotsManager.complicationSlots) {
@@ -585,7 +597,14 @@ class AnalogWatchCanvasRenderer(
 
     val textLunchMenu = Paint().apply {
         isAntiAlias = true
-        textSize = context.resources.getDimension(R.dimen.mylunch_message_size)
+        textSize = context.resources.getDimension(R.dimen.mylunch_menu_size)
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+    }
+
+    val textLunchMain = Paint().apply {
+        isAntiAlias = true
+        textSize = context.resources.getDimension(R.dimen.mylunch_main_size)
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
     }
@@ -626,17 +645,17 @@ class AnalogWatchCanvasRenderer(
             val formatter = DateTimeFormatter.ofPattern("MM.dd")
             val weeklyMenu = mutableListOf<Pair<String, String>>()
 
-            for (i in 0 until 7) {
-                val date = LocalDate.now().plusDays(i.toLong())
-                val dateStr = date.format(formatter)
+            try {
+                val url = "https://www.mokpo.ac.kr/www/275/subview.do"
+                val document: Document = Jsoup.connect(url).get()
 
-                try {
+                Log.d(TAG, "Fetched document")
+
+                for (i in 0 until 7) {
+                    val date = LocalDate.now().plusDays(i.toLong())
+                    val dateStr = date.format(formatter)
+
                     Log.d(TAG, "Fetching lunch menu for date: $dateStr")
-
-                    val url = "https://www.mokpo.ac.kr/www/275/subview.do"
-                    val document: Document = Jsoup.connect(url).get()
-
-                    Log.d(TAG, "Fetched document")
 
                     val dlElements = document.select("dl:has(span.date:contains($dateStr))")
 
@@ -652,26 +671,30 @@ class AnalogWatchCanvasRenderer(
                             val mainDish = contWrapElements[0].select("div.main").text()
                             val menu = contWrapElements[0].select("div.menu").text()
                             Log.d(TAG, "Found first menu for $dateStr: $mainDish, $menu")
-                            breakfastMenu = "아침 $mainDish, $menu"
+                            breakfastMenu = "$dateStr 아침 $mainDish, $menu"
+
                         }
                         if (contWrapElements.size > 1) {
                             val mainDish = contWrapElements[1].select("div.main").text()
                             val menu = contWrapElements[1].select("div.menu").text()
                             Log.d(TAG, "Found second menu for $dateStr: $mainDish, $menu")
-                            lunchMenu = "점심 $mainDish, $menu"
+                            lunchMenu = "$dateStr 점심 $mainDish, $menu"
+
                         }
                     }
 
                     weeklyMenu.add(Pair(breakfastMenu, lunchMenu))
-                } catch (e: Exception) {
-                    Log.e(TAG, "메뉴를 가져올 수 없습니다 for date: $dateStr. 1시간 후에 다시 시도합니다.", e)
-                    delay(3600000)
-                    return@withContext fetchWeeklyLunchMenu()
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "메뉴를 가져올 수 없습니다. 1시간 후에 다시 시도합니다.", e)
+                delay(3600000)
+                return@withContext fetchWeeklyLunchMenu()
             }
+            Log.d(TAG, "Fetched weekly menu: $weeklyMenu")
             return@withContext weeklyMenu
         }
     }
+
 
     private fun splitMenu(menu: String): Pair<String, String> {
         val parts = menu.split(", ", limit = 2)
@@ -691,7 +714,7 @@ class AnalogWatchCanvasRenderer(
         startY: Float
     ) {
         val textPaint = TextPaint(textPaint).apply {
-            textSize = context.resources.getDimension(R.dimen.mylunch_message_size)
+            textSize = context.resources.getDimension(R.dimen.mylunch_menu_size)
         }
         val lines = ArrayList<String>()
 

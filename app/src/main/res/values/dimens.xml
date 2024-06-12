@@ -34,6 +34,8 @@
     <dimen name="watch_face_preview_background_padding">16dp</dimen>
     <dimen name="no_padding">0dp</dimen>
 
-    <dimen name="mylunch_message_size">12dp</dimen>
+    <dimen name="mylunch_main_size">20dp</dimen>
+    <dimen name="mylunch_menu_size">12dp</dimen>
     <dimen name="mylunch_univeristy_size">12dp</dimen>
+
 </resources>
