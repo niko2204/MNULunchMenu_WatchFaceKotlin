@@ -357,7 +357,7 @@ class AnalogWatchCanvasRenderer(
             val (breakfastMain, breakfastDetail) = splitMenu(breakfastMenu)
             val (lunchMain, lunchDetail) = splitMenu(lunchMenu)
 
-            Log.d(TAG, "breakfastMain: $breakfastMain")
+         //   Log.d(TAG, "breakfastMain: $breakfastMain")
 
             when (currentHour) {
                 in 6..9 -> {
@@ -585,7 +585,7 @@ class AnalogWatchCanvasRenderer(
     companion object {
         private val HOUR_MARKS = arrayOf("3", "6", "9", "12")
         private const val WATCH_HAND_SCALE = 1.0f
-        var weeklyMenu: List<Pair<String, String>> = listOf(Pair("메뉴를 불러오는 중...", "메뉴를 불러오는 중..."))
+        var weeklyMenu: List<Pair<String, String>> = listOf(Pair("메뉴 초기화", "메뉴 초기화"))
     }
 
     val textUniversity = Paint().apply {
@@ -686,14 +686,15 @@ class AnalogWatchCanvasRenderer(
                     weeklyMenu.add(Pair(breakfastMenu, lunchMenu))
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "메뉴를 가져올 수 없습니다. 1시간 후에 다시 시도합니다.", e)
-                delay(3600000)
+                Log.e(TAG, "메뉴를 가져올 수 없습니다. 1분 후에 다시 시도합니다.", e)
+                delay(60000)  // 3분 후 다시 시도
                 return@withContext fetchWeeklyLunchMenu()
             }
             Log.d(TAG, "Fetched weekly menu: $weeklyMenu")
             return@withContext weeklyMenu
         }
     }
+
 
 
     private fun splitMenu(menu: String): Pair<String, String> {
