@@ -38,7 +38,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -361,13 +360,13 @@ class AnalogWatchCanvasRenderer(
 
             when (currentHour) {
                 in 6..9 -> {
-                    drawMultilineText(canvas, breakfastMain, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                    drawMultilineText(canvas, breakfastMain, textLunchMain, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
                     if (showMenu) {
                         drawMultilineText(canvas, breakfastDetail, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4)
                     }
                 }
                 in 10..12 -> {
-                    drawMultilineText(canvas, lunchMain, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
+                    drawMultilineText(canvas, lunchMain, textLunchMain, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
                     if (showMenu) {
                         drawMultilineText(canvas, lunchDetail, textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 4)
                     }
@@ -588,21 +587,21 @@ class AnalogWatchCanvasRenderer(
         var weeklyMenu: List<Pair<String, String>> = listOf(Pair("메뉴 초기화", "메뉴 초기화"))
     }
 
-    val textUniversity = Paint().apply {
+    private val textUniversity = Paint().apply {
         isAntiAlias = true
         textSize = context.resources.getDimension(R.dimen.mylunch_univeristy_size)
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
     }
 
-    val textLunchMenu = Paint().apply {
+    private val textLunchMenu = Paint().apply {
         isAntiAlias = true
         textSize = context.resources.getDimension(R.dimen.mylunch_menu_size)
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
     }
 
-    val textLunchMain = Paint().apply {
+    private val textLunchMain = Paint().apply {
         isAntiAlias = true
         textSize = context.resources.getDimension(R.dimen.mylunch_main_size)
         color = Color.WHITE
@@ -610,9 +609,41 @@ class AnalogWatchCanvasRenderer(
     }
 
     private fun scheduleMenuFetch() {
-        scheduleDailyTaskAt(8)
+     //   scheduleDailyTaskAt(8)
+        scheduleWeeklyTaskOn(Calendar.MONDAY, 8)
     }
 
+    private fun scheduleWeeklyTaskOn(dayOfWeek: Int, hour: Int) {
+        val calendar = Calendar.getInstance()
+
+        // 설정된 요일과 시간을 맞춤
+        calendar.set(Calendar.DAY_OF_WEEK, dayOfWeek)
+        calendar.set(Calendar.HOUR_OF_DAY, hour)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        var initialDelay = calendar.timeInMillis - System.currentTimeMillis()
+        if (initialDelay < 0) {
+            // 현재 시간이 설정된 시간보다 늦었으면, 다음 주로 스케줄링
+            calendar.add(Calendar.WEEK_OF_YEAR, 1)
+            initialDelay = calendar.timeInMillis - System.currentTimeMillis()
+        }
+
+        Executors.newSingleThreadScheduledExecutor().scheduleWithFixedDelay(
+            {
+                scope.launch {
+                    Log.d(TAG, "Fetching weekly menu on Monday at 8:00 AM")
+                    weeklyMenu = fetchWeeklyLunchMenu()
+                    Log.d(TAG, "Fetched weekly menu: $weeklyMenu")
+                    invalidate()
+                }
+            },
+            initialDelay,
+            TimeUnit.DAYS.toMillis(7),  // 1주일 간격으로 실행
+            TimeUnit.MILLISECONDS
+        )
+    }
     private fun scheduleDailyTaskAt(hour: Int) {
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.HOUR_OF_DAY, hour)
