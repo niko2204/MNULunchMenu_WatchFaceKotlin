@@ -345,7 +345,8 @@ class AnalogWatchCanvasRenderer(
 
         val maxWidth = bounds.width() * 0.8f
 
-        // 오늘 날짜와 일치하는 메뉴 찾기
+        val weeklyMenu = loadMenuFromDatabase()
+
         val todayMenu = weeklyMenu.find { menuPair ->
             val (breakfastMenu, lunchMenu) = menuPair
             breakfastMenu.contains(todayDateStr) || lunchMenu.contains(todayDateStr)
@@ -355,8 +356,6 @@ class AnalogWatchCanvasRenderer(
             val (breakfastMenu, lunchMenu) = todayMenu
             val (breakfastMain, breakfastDetail) = splitMenu(breakfastMenu)
             val (lunchMain, lunchDetail) = splitMenu(lunchMenu)
-
-         //   Log.d(TAG, "breakfastMain: $breakfastMain")
 
             when (currentHour) {
                 in 6..9 -> {
@@ -377,6 +376,7 @@ class AnalogWatchCanvasRenderer(
             drawMultilineText(canvas, "메뉴를 불러오는 중...", textLunchMenu, maxWidth, bounds.exactCenterX(), bounds.exactCenterY() + bounds.width() / 6)
         }
     }
+
 
 
 
@@ -675,12 +675,15 @@ class AnalogWatchCanvasRenderer(
         return withContext(Dispatchers.IO) {
             val formatter = DateTimeFormatter.ofPattern("MM.dd")
             val weeklyMenu = mutableListOf<Pair<String, String>>()
+            val dbHelper = DatabaseHelper(context)
 
             try {
                 val url = "https://www.mokpo.ac.kr/www/275/subview.do"
                 val document: Document = Jsoup.connect(url).get()
 
                 Log.d(TAG, "Fetched document")
+
+                dbHelper.deleteOldData()
 
                 for (i in 0 until 7) {
                     val date = LocalDate.now().plusDays(i.toLong())
@@ -702,29 +705,29 @@ class AnalogWatchCanvasRenderer(
                             val mainDish = contWrapElements[0].select("div.main").text()
                             val menu = contWrapElements[0].select("div.menu").text()
                             Log.d(TAG, "Found first menu for $dateStr: $mainDish, $menu")
-                            breakfastMenu = "$dateStr 아침 $mainDish, $menu"
-
+                            breakfastMenu = mainDish
                         }
                         if (contWrapElements.size > 1) {
                             val mainDish = contWrapElements[1].select("div.main").text()
                             val menu = contWrapElements[1].select("div.menu").text()
                             Log.d(TAG, "Found second menu for $dateStr: $mainDish, $menu")
-                            lunchMenu = "$dateStr 점심 $mainDish, $menu"
-
+                            lunchMenu = mainDish
                         }
                     }
 
-                    weeklyMenu.add(Pair(breakfastMenu, lunchMenu))
+                    dbHelper.insertOrUpdateMenu(dateStr, breakfastMenu, lunchMenu)
+                    weeklyMenu.add(Pair("$dateStr 아침 $breakfastMenu", "$dateStr 점심 $lunchMenu"))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "메뉴를 가져올 수 없습니다. 1분 후에 다시 시도합니다.", e)
-                delay(60000)  // 3분 후 다시 시도
+                delay(60000)
                 return@withContext fetchWeeklyLunchMenu()
             }
             Log.d(TAG, "Fetched weekly menu: $weeklyMenu")
             return@withContext weeklyMenu
         }
     }
+
 
 
 
@@ -765,4 +768,9 @@ class AnalogWatchCanvasRenderer(
             y += textPaint.descent() - textPaint.ascent()
         }
     }
+    private fun loadMenuFromDatabase(): List<Pair<String, String>> {
+        val dbHelper = DatabaseHelper(context)
+        return dbHelper.getMenu()
+    }
+
 }

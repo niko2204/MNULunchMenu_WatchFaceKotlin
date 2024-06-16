@@ -71,6 +71,7 @@
                 android:value="true" />
         </service>
 
+
         <activity
             android:name=".editor.WatchFaceConfigActivity"
             android:exported="true"
